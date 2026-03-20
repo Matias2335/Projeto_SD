@@ -1,0 +1,154 @@
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # BROKER — roteia mensagens entre clientes e servidores
+  # ─────────────────────────────────────────────────────────────────────────
+  broker:
+    build: ./broker
+    container_name: bbs-broker
+    networks:
+      - bbs-net
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # SERVIDORES
+  # ─────────────────────────────────────────────────────────────────────────
+  server-python-1:
+    build: ./server-python
+    container_name: bbs-server-python-1
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=5556
+      - SERVER_ID=python-server-1
+      - DB_PATH=/data/python-server-1.db
+    volumes:
+      - python-server-1-data:/data
+    depends_on:
+      - broker
+    networks:
+      - bbs-net
+
+  server-python-2:
+    build: ./server-python
+    container_name: bbs-server-python-2
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=5556
+      - SERVER_ID=python-server-2
+      - DB_PATH=/data/python-server-2.db
+    volumes:
+      - python-server-2-data:/data
+    depends_on:
+      - broker
+    networks:
+      - bbs-net
+
+  server-js-1:
+    build: ./server-js
+    container_name: bbs-server-js-1
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=5556
+      - SERVER_ID=js-server-1
+      - DB_PATH=/data/js-server-1.db
+    volumes:
+      - js-server-1-data:/data
+    depends_on:
+      - broker
+    networks:
+      - bbs-net
+
+  server-js-2:
+    build: ./server-js
+    container_name: bbs-server-js-2
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=5556
+      - SERVER_ID=js-server-2
+      - DB_PATH=/data/js-server-2.db
+    volumes:
+      - js-server-2-data:/data
+    depends_on:
+      - broker
+    networks:
+      - bbs-net
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # CLIENTES (bots) — 2 Python + 2 JS
+  # ─────────────────────────────────────────────────────────────────────────
+  client-python-1:
+    build: ./client-python
+    container_name: bbs-client-python-1
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=5555
+      - BOT_NAME=bot-python-1
+      - CHANNEL_TO_CREATE=geral-python
+    depends_on:
+      - broker
+      - server-python-1
+      - server-python-2
+      - server-js-1
+      - server-js-2
+    networks:
+      - bbs-net
+
+  client-python-2:
+    build: ./client-python
+    container_name: bbs-client-python-2
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=5555
+      - BOT_NAME=bot-python-2
+      - CHANNEL_TO_CREATE=tecnologia
+    depends_on:
+      - broker
+      - server-python-1
+      - server-python-2
+      - server-js-1
+      - server-js-2
+    networks:
+      - bbs-net
+
+  client-js-1:
+    build: ./client-js
+    container_name: bbs-client-js-1
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=5555
+      - BOT_NAME=bot-js-1
+      - CHANNEL_TO_CREATE=geral-js
+    depends_on:
+      - broker
+      - server-python-1
+      - server-python-2
+      - server-js-1
+      - server-js-2
+    networks:
+      - bbs-net
+
+  client-js-2:
+    build: ./client-js
+    container_name: bbs-client-js-2
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=5555
+      - BOT_NAME=bot-js-2
+      - CHANNEL_TO_CREATE=noticias
+    depends_on:
+      - broker
+      - server-python-1
+      - server-python-2
+      - server-js-1
+      - server-js-2
+    networks:
+      - bbs-net
+
+networks:
+  bbs-net:
+    driver: bridge
+
+volumes:
+  python-server-1-data:
+  python-server-2-data:
+  js-server-1-data:
+  js-server-2-data:
