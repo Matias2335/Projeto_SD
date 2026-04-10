@@ -1,11 +1,20 @@
 services:
 
   # ─────────────────────────────────────────────────────────────────────────
-  # BROKER — roteia mensagens entre clientes e servidores
+  # BROKER — roteia mensagens REQ/REP entre clientes e servidores
   # ─────────────────────────────────────────────────────────────────────────
   broker:
     build: ./broker
     container_name: bbs-broker
+    networks:
+      - bbs-net
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PROXY PUB/SUB — repassa publicações dos servidores para os clientes
+  # ─────────────────────────────────────────────────────────────────────────
+  proxy-pubsub:
+    build: ./proxy-pubsub
+    container_name: bbs-proxy-pubsub
     networks:
       - bbs-net
 
@@ -18,12 +27,15 @@ services:
     environment:
       - BROKER_HOST=broker
       - BROKER_PORT=5556
+      - PROXY_HOST=proxy-pubsub
+      - PROXY_PORT=5557
       - SERVER_ID=python-server-1
       - DB_PATH=/data/python-server-1.db
     volumes:
       - python-server-1-data:/data
     depends_on:
       - broker
+      - proxy-pubsub
     networks:
       - bbs-net
 
@@ -33,12 +45,15 @@ services:
     environment:
       - BROKER_HOST=broker
       - BROKER_PORT=5556
+      - PROXY_HOST=proxy-pubsub
+      - PROXY_PORT=5557
       - SERVER_ID=python-server-2
       - DB_PATH=/data/python-server-2.db
     volumes:
       - python-server-2-data:/data
     depends_on:
       - broker
+      - proxy-pubsub
     networks:
       - bbs-net
 
@@ -48,12 +63,15 @@ services:
     environment:
       - BROKER_HOST=broker
       - BROKER_PORT=5556
+      - PROXY_HOST=proxy-pubsub
+      - PROXY_PORT=5557
       - SERVER_ID=js-server-1
       - DB_PATH=/data/js-server-1.db
     volumes:
       - js-server-1-data:/data
     depends_on:
       - broker
+      - proxy-pubsub
     networks:
       - bbs-net
 
@@ -63,17 +81,20 @@ services:
     environment:
       - BROKER_HOST=broker
       - BROKER_PORT=5556
+      - PROXY_HOST=proxy-pubsub
+      - PROXY_PORT=5557
       - SERVER_ID=js-server-2
       - DB_PATH=/data/js-server-2.db
     volumes:
       - js-server-2-data:/data
     depends_on:
       - broker
+      - proxy-pubsub
     networks:
       - bbs-net
 
   # ─────────────────────────────────────────────────────────────────────────
-  # CLIENTES (bots) — 2 Python + 2 JS
+  # CLIENTES (bots) — 2 Python + 2 JavaScript
   # ─────────────────────────────────────────────────────────────────────────
   client-python-1:
     build: ./client-python
@@ -81,10 +102,12 @@ services:
     environment:
       - BROKER_HOST=broker
       - BROKER_PORT=5555
+      - PROXY_HOST=proxy-pubsub
+      - PROXY_SUB_PORT=5558
       - BOT_NAME=bot-python-1
-      - CHANNEL_TO_CREATE=geral-python
     depends_on:
       - broker
+      - proxy-pubsub
       - server-python-1
       - server-python-2
       - server-js-1
@@ -98,10 +121,12 @@ services:
     environment:
       - BROKER_HOST=broker
       - BROKER_PORT=5555
+      - PROXY_HOST=proxy-pubsub
+      - PROXY_SUB_PORT=5558
       - BOT_NAME=bot-python-2
-      - CHANNEL_TO_CREATE=tecnologia
     depends_on:
       - broker
+      - proxy-pubsub
       - server-python-1
       - server-python-2
       - server-js-1
@@ -115,10 +140,12 @@ services:
     environment:
       - BROKER_HOST=broker
       - BROKER_PORT=5555
+      - PROXY_HOST=proxy-pubsub
+      - PROXY_SUB_PORT=5558
       - BOT_NAME=bot-js-1
-      - CHANNEL_TO_CREATE=geral-js
     depends_on:
       - broker
+      - proxy-pubsub
       - server-python-1
       - server-python-2
       - server-js-1
@@ -132,10 +159,12 @@ services:
     environment:
       - BROKER_HOST=broker
       - BROKER_PORT=5555
+      - PROXY_HOST=proxy-pubsub
+      - PROXY_SUB_PORT=5558
       - BOT_NAME=bot-js-2
-      - CHANNEL_TO_CREATE=noticias
     depends_on:
       - broker
+      - proxy-pubsub
       - server-python-1
       - server-python-2
       - server-js-1

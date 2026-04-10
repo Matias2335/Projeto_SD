@@ -7,36 +7,58 @@ Todas as mensagens são serializadas com **MessagePack**.
 
 ```
 {
-  "type":      string,   // tipo da mensagem (ver abaixo)
+  "type":      string,   // tipo da mensagem
   "timestamp": int,      // unix timestamp em milissegundos (obrigatório)
   "payload":   map       // dados específicos do tipo
 }
 ```
 
-## Tipos de mensagem (type)
+## Tipos de mensagem — REQ/REP (via broker)
 
-### Cliente → Broker → Servidor
+### Cliente → Servidor
 
-| type             | payload campos                        |
-|------------------|---------------------------------------|
-| LOGIN            | { "username": string }                |
-| LIST_CHANNELS    | { "username": string }                |
-| CREATE_CHANNEL   | { "username": string, "channel": string } |
+| type             | payload                                              |
+|------------------|------------------------------------------------------|
+| LOGIN            | { "username": string }                               |
+| LIST_CHANNELS    | { "username": string }                               |
+| CREATE_CHANNEL   | { "username": string, "channel": string }            |
+| PUBLISH          | { "username": string, "channel": string, "message": string } |
 
-### Servidor → Broker → Cliente
+### Servidor → Cliente
 
-| type             | payload campos                                      |
-|------------------|-----------------------------------------------------|
-| LOGIN_OK         | { "username": string }                              |
-| LOGIN_ERROR      | { "username": string, "reason": string }            |
-| CHANNEL_LIST     | { "channels": [string, ...] }                       |
-| CHANNEL_CREATED  | { "channel": string }                               |
-| CHANNEL_EXISTS   | { "channel": string }                               |
-| CHANNEL_ERROR    | { "reason": string }                                |
+| type             | payload                                              |
+|------------------|------------------------------------------------------|
+| LOGIN_OK         | { "username": string }                               |
+| LOGIN_ERROR      | { "username": string, "reason": string }             |
+| CHANNEL_LIST     | { "channels": [string, ...] }                        |
+| CHANNEL_CREATED  | { "channel": string }                                |
+| CHANNEL_EXISTS   | { "channel": string }                                |
+| CHANNEL_ERROR    | { "reason": string }                                 |
+| PUBLISH_OK       | { "channel": string, "timestamp": int }              |
+| PUBLISH_ERROR    | { "reason": string }                                 |
 
-## Regras de erro
+## Mensagens PUB/SUB (via proxy)
 
-- Login duplicado (mesmo username já logado): LOGIN_ERROR com reason "already_logged_in"
-- Nome de usuário vazio: LOGIN_ERROR com reason "invalid_username"
-- Nome de canal vazio ou com espaços: CHANNEL_ERROR com reason "invalid_channel_name"
-- Canal já existente: CHANNEL_EXISTS (não é erro fatal, cliente apenas usa o canal)
+### Servidor → Proxy → Clientes inscritos
+
+Frame 1 (tópico): nome do canal em bytes  
+Frame 2 (corpo): MessagePack com:
+
+```
+{
+  "channel":   string,
+  "username":  string,
+  "message":   string,
+  "timestamp": int
+}
+```
+
+## Erros definidos
+
+| reason               | Situação                                      |
+|----------------------|-----------------------------------------------|
+| invalid_username     | Username vazio                                |
+| already_logged_in    | Username já está logado                       |
+| invalid_channel_name | Nome de canal vazio ou com espaços            |
+| channel_not_found    | Canal não existe ao tentar publicar           |
+| empty_message        | Mensagem vazia ao tentar publicar             |

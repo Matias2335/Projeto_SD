@@ -1,19 +1,41 @@
 """
-BBS Client Bot (Python) - Realiza login, lista canais e cria um canal automaticamente.
-Não requer interação humana.
+BBS Client Bot (Python) - Parte 2
+Loop infinito: inscreve em canais aleatórios e publica mensagens a cada 1 segundo.
 """
 
 import os
 import time
+import random
+import threading
 import zmq
 import msgpack
 
 
-BROKER_HOST = os.environ.get("BROKER_HOST", "broker")
-BROKER_PORT = int(os.environ.get("BROKER_PORT", "5555"))
-BOT_NAME = os.environ.get("BOT_NAME", "bot-python-1")
-CHANNEL_TO_CREATE = os.environ.get("CHANNEL_TO_CREATE", "geral-python")
-RETRY_DELAY = 2  # segundos entre tentativas de login
+BROKER_HOST      = os.environ.get("BROKER_HOST",      "broker")
+BROKER_PORT      = int(os.environ.get("BROKER_PORT",      "5555"))
+PROXY_HOST       = os.environ.get("PROXY_HOST",       "proxy-pubsub")
+PROXY_SUB_PORT   = int(os.environ.get("PROXY_SUB_PORT",   "5558"))
+BOT_NAME         = os.environ.get("BOT_NAME",         "bot-python-1")
+RETRY_DELAY      = 2
+
+# Mensagens aleatórias para simular conversa
+RANDOM_MESSAGES = [
+    "Olá a todos!",
+    "Alguém online?",
+    "Testando o sistema BBS...",
+    "Mensagem automática do bot.",
+    "O sistema está funcionando!",
+    "Distribuído e funcionando.",
+    "ZeroMQ é incrível.",
+    "MessagePack é eficiente.",
+    "Mais uma mensagem de teste.",
+    "BBS no ar!",
+    "Ping!",
+    "Sistemas distribuídos rocks.",
+    "Canal ativo.",
+    "Bot operacional.",
+    "Transmissão em andamento.",
+]
 
 
 def log(msg: str):
@@ -23,102 +45,143 @@ def log(msg: str):
 
 def make_request(msg_type: str, payload: dict) -> bytes:
     return msgpack.packb({
-        "type": msg_type,
+        "type":      msg_type,
         "timestamp": int(time.time() * 1000),
-        "payload": payload,
+        "payload":   payload,
     }, use_bin_type=True)
 
 
 def send_recv(socket, msg_type: str, payload: dict) -> dict:
-    raw = make_request(msg_type, payload)
-    parsed_out = msgpack.unpackb(raw, raw=False)
-    log(f"ENVIANDO | type={msg_type} | payload={payload} | timestamp={parsed_out['timestamp']}")
+    raw  = make_request(msg_type, payload)
+    out  = msgpack.unpackb(raw, raw=False)
+    log(f"ENVIANDO | type={msg_type} | payload={payload} | timestamp={out['timestamp']}")
     socket.send(raw)
-    response_raw = socket.recv()
-    response = msgpack.unpackb(response_raw, raw=False)
-    log(f"RECEBIDO | type={response['type']} | payload={response['payload']} | timestamp={response['timestamp']}")
-    return response
+    resp = msgpack.unpackb(socket.recv(), raw=False)
+    log(f"RECEBIDO | type={resp['type']} | payload={resp['payload']} | timestamp={resp['timestamp']}")
+    return resp
 
 
-def do_login(socket) -> bool:
-    """Tenta fazer login. Retorna True se bem-sucedido."""
-    response = send_recv(socket, "LOGIN", {"username": BOT_NAME})
-    if response["type"] == "LOGIN_OK":
-        log(f"✓ Login realizado com sucesso como '{BOT_NAME}'")
-        return True
-    else:
-        reason = response.get("payload", {}).get("reason", "desconhecido")
-        log(f"✗ Falha no login: {reason}. Tentando novamente em {RETRY_DELAY}s...")
-        return False
+# ---------------------------------------------------------------------------
+# Thread de recebimento SUB (roda em paralelo ao loop de publicação)
+# ---------------------------------------------------------------------------
+def subscriber_thread(subscribed_channels: list):
+    context = zmq.Context()
+    sub_socket = context.socket(zmq.SUB)
+    addr = f"tcp://{PROXY_HOST}:{PROXY_SUB_PORT}"
+    sub_socket.connect(addr)
+
+    for channel in subscribed_channels:
+        sub_socket.setsockopt_string(zmq.SUBSCRIBE, channel)
+        log(f"[SUB] Inscrito no canal '{channel}'")
+
+    log(f"[SUB] Aguardando mensagens nos canais: {subscribed_channels}")
+
+    while True:
+        try:
+            parts = sub_socket.recv_multipart()
+            recv_ts = int(time.time() * 1000)
+            channel = parts[0].decode()
+            data    = msgpack.unpackb(parts[1], raw=False)
+
+            send_ts  = data.get("timestamp", 0)
+            username = data.get("username",  "?")
+            message  = data.get("message",   "")
+
+            log(
+                f"[SUB] MENSAGEM RECEBIDA | canal='{channel}' | "
+                f"de='{username}' | msg='{message}' | "
+                f"timestamp_envio={send_ts} | timestamp_recebimento={recv_ts}"
+            )
+        except Exception as e:
+            log(f"[SUB] ERRO: {e}")
 
 
-def do_list_channels(socket) -> list[str]:
-    response = send_recv(socket, "LIST_CHANNELS", {"username": BOT_NAME})
-    channels = response.get("payload", {}).get("channels", [])
-    if channels:
-        log(f"✓ Canais disponíveis: {channels}")
-    else:
-        log("✓ Nenhum canal disponível ainda.")
-    return channels
-
-
-def do_create_channel(socket, channel_name: str):
-    response = send_recv(socket, "CREATE_CHANNEL", {
-        "username": BOT_NAME,
-        "channel": channel_name,
-    })
-    rtype = response["type"]
-    if rtype == "CHANNEL_CREATED":
-        log(f"✓ Canal '{channel_name}' criado com sucesso!")
-    elif rtype == "CHANNEL_EXISTS":
-        log(f"→ Canal '{channel_name}' já existe, usando o existente.")
-    else:
-        reason = response.get("payload", {}).get("reason", "desconhecido")
-        log(f"✗ Erro ao criar canal '{channel_name}': {reason}")
-
-
+# ---------------------------------------------------------------------------
+# Fluxo principal
+# ---------------------------------------------------------------------------
 def main():
-    # Aguarda broker e servidores subirem
     time.sleep(3)
 
     context = zmq.Context()
-    socket = context.socket(zmq.REQ)
-    addr = f"tcp://{BROKER_HOST}:{BROKER_PORT}"
+    socket  = context.socket(zmq.REQ)
+    addr    = f"tcp://{BROKER_HOST}:{BROKER_PORT}"
     socket.connect(addr)
     log(f"Conectado ao broker em {addr}")
 
-    # 1. Login (com retry em caso de falha)
+    # 1. Login com retry
     while True:
         try:
-            if do_login(socket):
+            resp = send_recv(socket, "LOGIN", {"username": BOT_NAME})
+            if resp["type"] == "LOGIN_OK":
+                log(f"✓ Login OK como '{BOT_NAME}'")
                 break
-        except Exception as e:
-            log(f"Erro de comunicação: {e}. Recriando socket...")
+            reason = resp.get("payload", {}).get("reason", "?")
+            log(f"✗ Login falhou: {reason}. Tentando em {RETRY_DELAY}s...")
             socket.close()
             time.sleep(RETRY_DELAY)
             socket = context.socket(zmq.REQ)
             socket.connect(addr)
-        time.sleep(RETRY_DELAY)
+        except Exception as e:
+            log(f"Erro: {e}. Recriando socket...")
+            socket.close()
+            time.sleep(RETRY_DELAY)
+            socket = context.socket(zmq.REQ)
+            socket.connect(addr)
 
-    # 2. Listar canais disponíveis
+    # 2. Listar canais
     time.sleep(1)
-    channels = do_list_channels(socket)
+    resp     = send_recv(socket, "LIST_CHANNELS", {"username": BOT_NAME})
+    channels = resp.get("payload", {}).get("channels", [])
+    log(f"Canais disponíveis: {channels}")
 
-    # 3. Criar canal (se ainda não existir)
+    # 3. Se menos de 5 canais, criar um novo
+    if len(channels) < 5:
+        new_channel = f"canal-{BOT_NAME}-{random.randint(100, 999)}"
+        resp = send_recv(socket, "CREATE_CHANNEL", {"username": BOT_NAME, "channel": new_channel})
+        if resp["type"] in ("CHANNEL_CREATED", "CHANNEL_EXISTS"):
+            if new_channel not in channels:
+                channels.append(new_channel)
+            log(f"✓ Canal '{new_channel}' pronto.")
+
+    # Atualiza lista de canais
+    resp     = send_recv(socket, "LIST_CHANNELS", {"username": BOT_NAME})
+    channels = resp.get("payload", {}).get("channels", [])
+
+    # 4. Inscrever em canais aleatórios (mínimo 3)
+    subscribed = []
+    available  = list(channels)
+    random.shuffle(available)
+    while len(subscribed) < 3 and available:
+        subscribed.append(available.pop())
+
+    if not subscribed:
+        log("Nenhum canal disponível para inscrição. Encerrando.")
+        return
+
+    # Inicia thread SUB em paralelo
+    t = threading.Thread(target=subscriber_thread, args=(subscribed,), daemon=True)
+    t.start()
+
     time.sleep(1)
-    if CHANNEL_TO_CREATE not in channels:
-        do_create_channel(socket, CHANNEL_TO_CREATE)
-    else:
-        log(f"→ Canal '{CHANNEL_TO_CREATE}' já estava na lista.")
 
-    # 4. Listar novamente para confirmar
-    time.sleep(1)
-    log("Listando canais após criação:")
-    do_list_channels(socket)
-
-    log("Bot finalizou todas as tarefas da Parte 1.")
-    socket.close()
-    context.term()
+    # 5. Loop infinito de publicação
+    log("Iniciando loop de publicação...")
+    while True:
+        channel = random.choice(channels)
+        log(f"Publicando 10 mensagens no canal '{channel}'...")
+        for i in range(10):
+            message = random.choice(RANDOM_MESSAGES)
+            resp    = send_recv(socket, "PUBLISH", {
+                "username": BOT_NAME,
+                "channel":  channel,
+                "message":  message,
+            })
+            if resp["type"] == "PUBLISH_OK":
+                log(f"✓ Publicado: '{message}' em '{channel}'")
+            else:
+                reason = resp.get("payload", {}).get("reason", "?")
+                log(f"✗ Erro ao publicar: {reason}")
+            time.sleep(1)
 
 
 if __name__ == "__main__":
