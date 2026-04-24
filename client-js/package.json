@@ -1,0 +1,14 @@
+{
+  "name": "bbs-client-js",
+  "version": "1.0.0",
+  "description": "BBS Client Bot - JavaScript/Node.js",
+  "main": "client.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node client.js"
+  },
+  "dependencies": {
+    "zeromq": "6.0.0-beta.19",
+    "@msgpack/msgpack": "^3.0.0"
+  }
+}

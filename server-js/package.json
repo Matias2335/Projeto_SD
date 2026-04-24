@@ -1,0 +1,15 @@
+{
+  "name": "bbs-server-js",
+  "version": "1.0.0",
+  "description": "BBS Server - JavaScript/Node.js",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "zeromq": "6.0.0-beta.19",
+    "@msgpack/msgpack": "^3.0.0",
+    "better-sqlite3": "^9.4.3"
+  }
+}
